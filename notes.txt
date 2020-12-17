@@ -1,0 +1,121 @@
+% k get deployment
+NAME                      READY   UP-TO-DATE   AVAILABLE   AGE
+argocd-dex-server         1/1     1            1           52s
+argocd-redis-ha-haproxy   0/3     0            0           52s
+argocd-repo-server        2/2     2            2           52s
+argocd-server             2/2     2            2           51s
+
+-----------------------------------------------------------------------------
+
+k describe replicasets.apps argocd-redis-ha-haproxy-7c598b8fb5| less
+Events:
+  Type     Reason        Age                   From                   Message
+  ----     ------        ----                  ----                   -------
+  Warning  FailedCreate  28s (x17 over 5m56s)  replicaset-controller  Error creating: pods "argocd-redis-ha-haproxy-7c598b8fb5-" is forbidden: unable to validate against any security context constraint: [provider restricted: .spec.securityContext.fsGroup: Invalid value: []int64{1000}: 1000 is not an allowed group spec.initContainers[0].securityContext.runAsUser: Invalid value: 1000: must be in the ranges: [1000580000, 1000589999] spec.containers[0].securityContext.runAsUser: Invalid value: 1000: must be in the ranges: [1000580000, 1000589999]]
+
+k create namespace argocd
+k apply -n argocd -f install.yaml
+oc adm policy add-scc-to-user nonroot -z argocd-redis-ha
+oc adm policy add-scc-to-user nonroot -z argocd-redis-ha-haproxy
+
+-----------------------------------------------------------------------------
+
+% k logs argocd-redis-ha-server-0
+error: a container name must be specified for pod argocd-redis-ha-server-0, choose one of: [redis sentinel] or one of the init containers: [config-init]
+
+% k logs argocd-redis-ha-server-0 -c config-init
+/readonly-config/init.sh: line 1: hostname: command not found
+Could not connect to Redis at argocd-redis-ha:26379: Name or service not known
+Initializing config..
+/readonly-config/init.sh: line 84: Could not resolve the announce ip for this pod: command not found
+
+-----------------------------------------------------------------------------
+
+time="2020-12-11T18:47:19Z" level=warning msg="Failed to save clusters
+info: DENIED Redis is running in protected mode because protected mode
+is enabled, no bind address was specified, no authentication password
+is requested to clients. In this mode connections are only accepted
+from the loopback interface. If you want to connect from external
+computers to Redis you may adopt one of the following solutions: 1)
+Just disable protected mode sending the command 'CONFIG SET
+protected-mode no' from the loopback interface by connecting to Redis
+from the same host the server is running, however MAKE SURE Redis is
+not publicly accessible from internet if you do so. Use CONFIG REWRITE
+to make this change permanent. 2) Alternatively you can just disable
+the protected mode by editing the Redis configuration file, and
+setting the protected mode option to 'no', and then restarting the
+server. 3) If you started the server manually just for testing,
+restart it with the '--protected-mode no' option. 4) Setup a bind
+address or an authentication password. NOTE: You only need to do one
+of the above things in order for the server to start accepting
+connections from the outside."
+
+-----------------------------------------------------------------------------
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/component: redis
+    app.kubernetes.io/name: argocd-redis
+    app.kubernetes.io/part-of: argocd
+  name: argocd-redis
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: argocd-redis
+    spec:
+      containers:
+      - args:
+        - redis-server
+        - --save
+        - ""
+        - --appendonly
+        - "no"
+        - --protected-mode
+        - "no"
+        image: registry.redhat.io/rhel8/redis-5
+        imagePullPolicy: Always
+        name: redis
+        ports:
+        - containerPort: 6379
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      serviceAccountName: argocd-redis
+
+-----------------------------------------------------------------------------
+
+% k logs argocd-redis-ha-haproxy-557856944f-jjwcj 
+I1216 17:12:40.493205       1 template.go:403] router "msg"="starting router"  "version"="majorFromGit: \nminorFromGit: \ncommitFromGit: 89e441002d0dfaefd5587bd9a380f254e864dba2\nversionFromGit: 4.0.0-219-g89e4410\ngitTreeState: clean\nbuildDate: 2020-12-05T14:15:58Z\n"
+I1216 17:12:40.500144       1 router.go:185] template "msg"="creating a new template router"  "writeDir"="/var/lib/haproxy"
+I1216 17:12:40.500253       1 router.go:263] template "msg"="router will coalesce reloads within an interval of each other"  "interval"="5s"
+E1216 17:12:40.500298       1 router.go:387] template "msg"="failed to write default cert" "error"="open tls.crt: no such file or directory"  
+I1216 17:12:40.500312       1 router.go:389] template "msg"="using default cert from router container image"  
+I1216 17:12:40.500372       1 router.go:325] template "msg"="watching for changes"  "path"=""
+I1216 17:12:40.500431       1 router.go:394] template "msg"="failed to establish watch on certificate directory"  "error"={"Op":"lstat","Path":"tls.crt","Err":2}
+I1216 17:12:40.500457       1 router.go:262] router "msg"="router is including routes in all namespaces"  
+E1216 17:12:40.507391       1 reflector.go:127] github.com/openshift/router/pkg/router/controller/factory/factory.go:125: Failed to watch *v1.Route: failed to list *v1.Route: routes.route.openshift.io is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "routes" in API group "route.openshift.io" at the cluster scope
+E1216 17:12:40.507563       1 reflector.go:127] github.com/openshift/router/pkg/router/template/service_lookup.go:33: Failed to watch *v1.Service: failed to list *v1.Service: services is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "services" in API group "" at the cluster scope
+E1216 17:12:40.507761       1 reflector.go:127] github.com/openshift/router/pkg/router/controller/factory/factory.go:125: Failed to watch *v1beta1.EndpointSlice: failed to list *v1beta1.EndpointSlice: endpointslices.discovery.k8s.io is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "endpointslices" in API group "discovery.k8s.io" at the cluster scope
+E1216 17:12:41.357062       1 reflector.go:127] github.com/openshift/router/pkg/router/template/service_lookup.go:33: Failed to watch *v1.Service: failed to list *v1.Service: services is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "services" in API group "" at the cluster scope
+E1216 17:12:41.842448       1 reflector.go:127] github.com/openshift/router/pkg/router/controller/factory/factory.go:125: Failed to watch *v1beta1.EndpointSlice: failed to list *v1beta1.EndpointSlice: endpointslices.discovery.k8s.io is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "endpointslices" in API group "discovery.k8s.io" at the cluster scope
+E1216 17:12:42.105409       1 reflector.go:127] github.com/openshift/router/pkg/router/controller/factory/factory.go:125: Failed to watch *v1.Route: failed to list *v1.Route: routes.route.openshift.io is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "routes" in API group "route.openshift.io" at the cluster scope
+E1216 17:12:43.055593       1 reflector.go:127] github.com/openshift/router/pkg/router/template/service_lookup.go:33: Failed to watch *v1.Service: failed to list *v1.Service: services is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "services" in API group "" at the cluster scope
+E1216 17:12:44.976150       1 reflector.go:127] github.com/openshift/router/pkg/router/controller/factory/factory.go:125: Failed to watch *v1beta1.EndpointSlice: failed to list *v1beta1.EndpointSlice: endpointslices.discovery.k8s.io is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "endpointslices" in API group "discovery.k8s.io" at the cluster scope
+E1216 17:12:45.263385       1 reflector.go:127] github.com/openshift/router/pkg/router/controller/factory/factory.go:125: Failed to watch *v1.Route: failed to list *v1.Route: routes.route.openshift.io is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "routes" in API group "route.openshift.io" at the cluster scope
+E1216 17:12:48.335859       1 reflector.go:127] github.com/openshift/router/pkg/router/template/service_lookup.go:33: Failed to watch *v1.Service: failed to list *v1.Service: services is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "services" in API group "" at the cluster scope
+E1216 17:12:50.520218       1 reflector.go:127] github.com/openshift/router/pkg/router/controller/factory/factory.go:125: Failed to watch *v1beta1.EndpointSlice: failed to list *v1beta1.EndpointSlice: endpointslices.discovery.k8s.io is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "endpointslices" in API group "discovery.k8s.io" at the cluster scope
+E1216 17:12:50.919234       1 reflector.go:127] github.com/openshift/router/pkg/router/controller/factory/factory.go:125: Failed to watch *v1.Route: failed to list *v1.Route: routes.route.openshift.io is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "routes" in API group "route.openshift.io" at the cluster scope
+E1216 17:12:59.408906       1 reflector.go:127] github.com/openshift/router/pkg/router/template/service_lookup.go:33: Failed to watch *v1.Service: failed to list *v1.Service: services is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "services" in API group "" at the cluster scope
+E1216 17:13:01.049508       1 reflector.go:127] github.com/openshift/router/pkg/router/controller/factory/factory.go:125: Failed to watch *v1beta1.EndpointSlice: failed to list *v1beta1.EndpointSlice: endpointslices.discovery.k8s.io is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "endpointslices" in API group "discovery.k8s.io" at the cluster scope
+E1216 17:13:01.625115       1 reflector.go:127] github.com/openshift/router/pkg/router/controller/factory/factory.go:125: Failed to watch *v1.Route: failed to list *v1.Route: routes.route.openshift.io is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "routes" in API group "route.openshift.io" at the cluster scope
+E1216 17:13:17.111859       1 reflector.go:127] github.com/openshift/router/pkg/router/template/service_lookup.go:33: Failed to watch *v1.Service: failed to list *v1.Service: services is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "services" in API group "" at the cluster scope
+E1216 17:13:19.957949       1 reflector.go:127] github.com/openshift/router/pkg/router/controller/factory/factory.go:125: Failed to watch *v1.Route: failed to list *v1.Route: routes.route.openshift.io is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "routes" in API group "route.openshift.io" at the cluster scope
