@@ -2498,11 +2498,14 @@ spec:
             weight: 5
       containers:
       - args:
+        - redis-server
         - --save
         - ""
         - --appendonly
         - "no"
-        image: redis:5.0.10-alpine
+        - --protected-mode
+        - "no"
+        image: registry.redhat.io/rhel8/redis-5
         imagePullPolicy: Always
         name: redis
         ports:
