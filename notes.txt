@@ -1,3 +1,32 @@
+
+k create namespace argocd
+k config set-context --current --namespace=argocd
+k apply -n argocd -f install.yaml
+oc adm policy add-scc-to-user nonroot -z argocd-redis-ha
+oc adm policy add-scc-to-user nonroot -z argocd-redis-ha-haproxy
+
+-----------------------------------------------------------------------------
+https://github.com/openshift/router
+
+openshift-router
+
+This repository contains the OpenShift routers for NGINX, HAProxy, and
+F5. They read Route objects out of the OpenShift API and allow ingress
+to services. HAProxy is currently the reference implementation. See
+the details in each router image.
+
+These images are managed by the cluster-ingress-operator in an
+OpenShift 4.0+ cluster.
+
+The template router code (openshift-router) is generic and creates
+config files on disk based on the state of the cluster. The process
+launches proxies as children and triggers reloads as necessary after
+new config has been written. The standard logic for handling
+conflicting routes, supporting wildcards, reporting status back to the
+Route object, and metrics live in the standard process.
+
+-----------------------------------------------------------------------------
+
 % k get deployment
 NAME                      READY   UP-TO-DATE   AVAILABLE   AGE
 argocd-dex-server         1/1     1            1           52s
@@ -12,13 +41,6 @@ Events:
   Type     Reason        Age                   From                   Message
   ----     ------        ----                  ----                   -------
   Warning  FailedCreate  28s (x17 over 5m56s)  replicaset-controller  Error creating: pods "argocd-redis-ha-haproxy-7c598b8fb5-" is forbidden: unable to validate against any security context constraint: [provider restricted: .spec.securityContext.fsGroup: Invalid value: []int64{1000}: 1000 is not an allowed group spec.initContainers[0].securityContext.runAsUser: Invalid value: 1000: must be in the ranges: [1000580000, 1000589999] spec.containers[0].securityContext.runAsUser: Invalid value: 1000: must be in the ranges: [1000580000, 1000589999]]
-
-k create namespace argocd
-k apply -n argocd -f install.yaml
-oc adm policy add-scc-to-user nonroot -z argocd-redis-ha
-oc adm policy add-scc-to-user nonroot -z argocd-redis-ha-haproxy
-
------------------------------------------------------------------------------
 
 % k logs argocd-redis-ha-server-0
 error: a container name must be specified for pod argocd-redis-ha-server-0, choose one of: [redis sentinel] or one of the init containers: [config-init]
@@ -119,3 +141,125 @@ E1216 17:13:01.049508       1 reflector.go:127] github.com/openshift/router/pkg/
 E1216 17:13:01.625115       1 reflector.go:127] github.com/openshift/router/pkg/router/controller/factory/factory.go:125: Failed to watch *v1.Route: failed to list *v1.Route: routes.route.openshift.io is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "routes" in API group "route.openshift.io" at the cluster scope
 E1216 17:13:17.111859       1 reflector.go:127] github.com/openshift/router/pkg/router/template/service_lookup.go:33: Failed to watch *v1.Service: failed to list *v1.Service: services is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "services" in API group "" at the cluster scope
 E1216 17:13:19.957949       1 reflector.go:127] github.com/openshift/router/pkg/router/controller/factory/factory.go:125: Failed to watch *v1.Route: failed to list *v1.Route: routes.route.openshift.io is forbidden: User "system:serviceaccount:argocd:argocd-redis-ha-haproxy" cannot list resource "routes" in API group "route.openshift.io" at the cluster scope
+
+% k describe pod argocd-redis-ha-haproxy-557856944f-gsbcx
+Name:         argocd-redis-ha-haproxy-557856944f-gsbcx
+Namespace:    argocd
+Priority:     0
+Node:         ci-ln-2kwjfmb-f76d1-hmwlg-worker-d-cjtbj/10.0.32.2
+Start Time:   Thu, 17 Dec 2020 14:26:12 -0500
+Labels:       app.kubernetes.io/name=argocd-redis-ha-haproxy
+              pod-template-hash=557856944f
+Annotations:  checksum/config: 790be9eae7c7e468c497c0256949ab96cb3f14b935c6702424647c3c60fba91c
+              k8s.v1.cni.cncf.io/network-status:
+                [{
+                    "name": "",
+                    "interface": "eth0",
+                    "ips": [
+                        "10.129.2.15"
+                    ],
+                    "default": true,
+                    "dns": {}
+                }]
+              k8s.v1.cni.cncf.io/networks-status:
+                [{
+                    "name": "",
+                    "interface": "eth0",
+                    "ips": [
+                        "10.129.2.15"
+                    ],
+                    "default": true,
+                    "dns": {}
+                }]
+              openshift.io/scc: nonroot
+Status:       Running
+IP:           10.129.2.15
+IPs:
+  IP:           10.129.2.15
+Controlled By:  ReplicaSet/argocd-redis-ha-haproxy-557856944f
+Init Containers:
+  config-init:
+    Container ID:  cri-o://978102efe1cc540677ca0858ee87f058023fcb665705132a655a6cc833d85eac
+    Image:         registry.redhat.io/openshift4/ose-haproxy-router
+    Image ID:      registry.redhat.io/openshift4/ose-haproxy-router@sha256:046365f99fb6308ae1fbc4a95bb2a1734e87b13af5f0877123313dfbdbdcc0f2
+    Port:          <none>
+    Host Port:     <none>
+    Command:
+      sh
+    Args:
+      /readonly/haproxy_init.sh
+    State:          Terminated
+      Reason:       Completed
+      Exit Code:    0
+      Started:      Thu, 17 Dec 2020 14:26:21 -0500
+      Finished:     Thu, 17 Dec 2020 14:26:21 -0500
+    Ready:          True
+    Restart Count:  0
+    Environment:    <none>
+    Mounts:
+      /data from data (rw)
+      /readonly from config-volume (ro)
+      /var/run/secrets/kubernetes.io/serviceaccount from argocd-redis-ha-haproxy-token-25jz6 (ro)
+Containers:
+  haproxy:
+    Container ID:   cri-o://d071764e2310ed08282b193abb5464b5b2117e916185346b0a69d3798bf429f4
+    Image:          registry.redhat.io/openshift4/ose-haproxy-router
+    Image ID:       registry.redhat.io/openshift4/ose-haproxy-router@sha256:046365f99fb6308ae1fbc4a95bb2a1734e87b13af5f0877123313dfbdbdcc0f2
+    Port:           6379/TCP
+    Host Port:      0/TCP
+    State:          Running
+      Started:      Thu, 17 Dec 2020 14:27:07 -0500
+    Last State:     Terminated
+      Reason:       Error
+      Exit Code:    137
+      Started:      Thu, 17 Dec 2020 14:26:26 -0500
+      Finished:     Thu, 17 Dec 2020 14:27:07 -0500
+    Ready:          True
+    Restart Count:  1
+    Liveness:       http-get http://:8888/healthz delay=5s timeout=1s period=3s #success=1 #failure=3
+    Environment:    <none>
+    Mounts:
+      /run/haproxy from shared-socket (rw)
+      /usr/local/etc/haproxy from data (rw)
+      /var/run/secrets/kubernetes.io/serviceaccount from argocd-redis-ha-haproxy-token-25jz6 (ro)
+Conditions:
+  Type              Status
+  Initialized       True 
+  Ready             True 
+  ContainersReady   True 
+  PodScheduled      True 
+Volumes:
+  config-volume:
+    Type:      ConfigMap (a volume populated by a ConfigMap)
+    Name:      argocd-redis-ha-configmap
+    Optional:  false
+  shared-socket:
+    Type:       EmptyDir (a temporary directory that shares a pod's lifetime)
+    Medium:     
+    SizeLimit:  <unset>
+  data:
+    Type:       EmptyDir (a temporary directory that shares a pod's lifetime)
+    Medium:     
+    SizeLimit:  <unset>
+  argocd-redis-ha-haproxy-token-25jz6:
+    Type:        Secret (a volume populated by a Secret)
+    SecretName:  argocd-redis-ha-haproxy-token-25jz6
+    Optional:    false
+QoS Class:       BestEffort
+Node-Selectors:  <none>
+Tolerations:     node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                 node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type     Reason          Age                From               Message
+  ----     ------          ----               ----               -------
+  Normal   Scheduled       57s                default-scheduler  Successfully assigned argocd/argocd-redis-ha-haproxy-557856944f-gsbcx to ci-ln-2kwjfmb-f76d1-hmwlg-worker-d-cjtbj
+  Normal   AddedInterface  55s                multus             Add eth0 [10.129.2.15/23]
+  Normal   Pulling         55s                kubelet            Pulling image "registry.redhat.io/openshift4/ose-haproxy-router"
+  Normal   Pulled          49s                kubelet            Successfully pulled image "registry.redhat.io/openshift4/ose-haproxy-router" in 6.369556504s
+  Normal   Created         48s                kubelet            Created container config-init
+  Normal   Started         48s                kubelet            Started container config-init
+  Warning  Unhealthy       32s (x3 over 38s)  kubelet            Liveness probe failed: Get "http://10.129.2.15:8888/healthz": dial tcp 10.129.2.15:8888: connect: connection refused
+  Normal   Killing         32s                kubelet            Container haproxy failed liveness probe, will be restarted
+  Normal   Pulled          2s (x2 over 44s)   kubelet            Container image "registry.redhat.io/openshift4/ose-haproxy-router" already present on machine
+  Normal   Created         2s (x2 over 43s)   kubelet            Created container haproxy
+  Normal   Started         2s (x2 over 43s)   kubelet            Started container haproxy

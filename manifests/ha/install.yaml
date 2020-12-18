@@ -2913,7 +2913,11 @@ spec:
                 app.kubernetes.io/name: argocd-redis-ha-haproxy
             topologyKey: kubernetes.io/hostname
       containers:
-      - image: registry.redhat.io/openshift4/ose-haproxy-router
+      - command:
+        - haproxy
+        - -f
+        - /usr/local/etc/haproxy/haproxy.cfg
+        image: registry.redhat.io/openshift4/ose-haproxy-router
         imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
